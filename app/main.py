@@ -18,13 +18,10 @@ from app.core.middleware import (
     LoggingMiddleware,
 )
 from app.core.metrics import metrics
-from app.api.routes import router as api_router
+from app.api.routes import router as api_router, model_registry
 from app.models.loader import ModelRegistry
 
 logger = structlog.get_logger()
-
-# Global model registry
-model_registry = ModelRegistry()
 
 
 @asynccontextmanager
@@ -38,6 +35,11 @@ async def lifespan(app: FastAPI):
     
     # Load model
     settings = get_settings()
+    global model_registry
+    
+    # Initialize model registry
+    model_registry = ModelRegistry()
+    
     await model_registry.load_model(
         backend=settings.MODEL_BACKEND,
         model_path=settings.MODEL_PATH,
@@ -114,13 +116,13 @@ async def health_check() -> Dict[str, Any]:
 @app.get("/ready")
 async def readiness_check() -> Dict[str, Any]:
     """Readiness check endpoint."""
-    model_ready = model_registry.is_loaded()
+    model_ready = model_registry.is_loaded() if model_registry else False
     
     return {
         "status": "ready" if model_ready else "not_ready",
         "model_loaded": model_ready,
-        "model_backend": model_registry.backend,
-        "model_version": model_registry.version,
+        "model_backend": model_registry.backend if model_registry else None,
+        "model_version": model_registry.version if model_registry else None,
         "timestamp": time.time()
     }
 
@@ -137,18 +139,10 @@ async def get_metrics() -> Response:
 @app.get("/model/info")
 async def model_info() -> Dict[str, Any]:
     """Get model information."""
-    if not model_registry.is_loaded():
+    if not model_registry or not model_registry.is_loaded():
         return {"error": "Model not loaded"}
     
-    return {
-        "backend": model_registry.backend,
-        "version": model_registry.version,
-        "load_time": model_registry.load_time,
-        "warmup_completed": model_registry.warmup_completed,
-        "feature_names": getattr(model_registry.model, "feature_names_in_", None),
-        "n_features": getattr(model_registry.model, "n_features_in_", None),
-        "model_type": type(model_registry.model).__name__
-    }
+    return model_registry.get_model_info()
 
 
 if __name__ == "__main__":
@@ -158,8 +152,8 @@ if __name__ == "__main__":
     
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
-        port=8000,
+        host=settings.HOST,
+        port=settings.PORT,
         reload=settings.DEBUG,
         log_level="info"
     )

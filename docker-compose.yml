@@ -1,18 +1,7 @@
 version: '3.8'
 
 services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    volumes:
-      - redis_data:/data
-
+  # FastAPI Application
   app:
     build:
       context: .
@@ -20,46 +9,78 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DEBUG=1
+      - MODEL_BACKEND=sklearn
+      - MODEL_PATH=models/model.joblib
+      - ONNX_PATH=models/model.onnx
+      - WARMUP_ENABLED=true
+      - WARMUP_REQUESTS=10
+      - MAX_BATCH_SIZE=100
+      - INFERENCE_TIMEOUT=30.0
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - MODEL_BACKEND=sklearn
-      - WARMUP_ENABLED=true
       - PROMETHEUS_ENABLED=true
+      - LOG_LEVEL=INFO
+      - DEBUG=0
+      - ENABLE_DOCS=true
+      - ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - HOST=0.0.0.0
+      - PORT=8000
     volumes:
-      - .:/app
       - ./models:/app/models
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    restart: unless-stopped
 
+  # Celery Worker
   worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
     environment:
-      - DEBUG=1
+      - MODEL_BACKEND=sklearn
+      - MODEL_PATH=models/model.joblib
+      - ONNX_PATH=models/model.onnx
+      - WARMUP_ENABLED=true
+      - WARMUP_REQUESTS=10
+      - MAX_BATCH_SIZE=100
+      - INFERENCE_TIMEOUT=30.0
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - MODEL_BACKEND=sklearn
+      - PROMETHEUS_ENABLED=true
+      - LOG_LEVEL=INFO
     volumes:
-      - .:/app
       - ./models:/app/models
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
+      - app
+    restart: unless-stopped
     command: celery -A worker.celery_app worker --loglevel=info --concurrency=2
 
+  # Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Prometheus
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.45.0
     ports:
       - "9090:9090"
     volumes:
@@ -70,22 +91,28 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
     depends_on:
       - app
+    restart: unless-stopped
 
+  # Grafana
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.0.0
     ports:
       - "3000:3000"
     environment:
+      - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./infra/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
+    restart: unless-stopped
 
 volumes:
   redis_data:

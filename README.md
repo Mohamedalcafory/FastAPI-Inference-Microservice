@@ -16,12 +16,23 @@ Production-ready FastAPI microservice for machine learning inference with async 
 - **Request Validation**: Pydantic schemas with size limits
 - **Error Handling**: Structured error responses with correlation IDs
 - **Graceful Degradation**: Circuit breakers and timeouts
+- **Retry Logic**: Exponential backoff for async tasks
 
 ### Developer Experience
 - **OpenAPI Docs**: Auto-generated API documentation
 - **Type Safety**: Full mypy compliance
-- **Testing**: 85%+ coverage with performance regression tests
-- **CI/CD Ready**: GitHub Actions with quality gates
+- **Testing**: Unit and integration tests with pytest
+- **Code Quality**: Ruff, Black, and pre-commit hooks
+- **Load Testing**: k6 performance testing scripts
+- **Docker Ready**: Complete containerization with health checks
+
+### Production Features
+- **Structured Logging**: JSON logs with request correlation
+- **Metrics Collection**: Prometheus histograms, counters, and gauges
+- **Health Checks**: Kubernetes-ready health and readiness probes
+- **Model Versioning**: Support for multiple model versions
+- **ONNX Optimization**: Optional ONNX runtime for performance
+- **Queue Management**: Celery task monitoring and cancellation
 
 ## 📊 Architecture
 
@@ -44,36 +55,82 @@ Production-ready FastAPI microservice for machine learning inference with async 
               └─────────┘   └──────────┘
 ```
 
+## 📁 Project Structure
+
+```
+FastAPI-Inference-Microservice/
+├── app/                          # Main application package
+│   ├── api/                      # API routes and endpoints
+│   │   └── routes.py            # All API endpoints
+│   ├── core/                     # Core functionality
+│   │   ├── config.py            # Configuration management
+│   │   ├── logging.py           # Structured logging
+│   │   ├── metrics.py           # Prometheus metrics
+│   │   └── middleware.py        # Request middleware
+│   ├── models/                   # Model management
+│   │   └── loader.py            # Model registry and loader
+│   ├── schemas/                  # Pydantic schemas
+│   │   ├── request.py           # Request models
+│   │   └── response.py          # Response models
+│   ├── services/                 # Business logic
+│   │   └── tasks.py             # Celery tasks
+│   └── main.py                   # FastAPI application
+├── worker/                       # Celery worker
+│   └── celery_app.py            # Worker configuration
+├── scripts/                      # Utility scripts
+│   ├── train_model.py           # Model training
+│   ├── export_onnx.py           # ONNX export
+│   └── load_test.js             # k6 load testing
+├── tests/                        # Test suite
+│   ├── conftest.py              # Test configuration
+│   └── test_sync_inference.py   # Sync endpoint tests
+├── infra/                        # Infrastructure
+│   └── prometheus.yml           # Prometheus config
+├── docker-compose.yml            # Docker services
+├── Dockerfile                    # App container
+├── Dockerfile.worker             # Worker container
+├── Makefile                      # Development commands
+├── pyproject.toml               # Project configuration
+└── README.md                    # This file
+```
+
 ## 🛠 Quick Start
 
 ### Prerequisites
 - Docker & Docker Compose
 - Python 3.11+ (for local development)
-- k6 (for load testing)
+- k6 (for load testing) - optional
 
 ### 1. Clone and Setup
 ```bash
 git clone <repo-url>
-cd fastapi-inference-service
-cp .env.example .env
+cd FastAPI-Inference-Microservice
+cp env.example .env
 ```
 
-### 2. Start Development Environment
+### 2. Setup and Start
 ```bash
-# Start app + Redis
+# Setup development environment
+make setup
+
+# Train a simple sklearn model
+make train
+
+# Start development environment (app + Redis)
 make dev
 
 # Or start all services (includes Prometheus/Grafana)
 make all
 ```
 
-### 3. Train Model and Test
+### 3. Test the API
 ```bash
-# Train a simple sklearn model
-make train
-
-# Test the API
+# Test all endpoints
 make api-test
+
+# Or test individual endpoints
+curl http://localhost:8000/health
+curl http://localhost:8000/model/info
 ```
 
 ### 4. Access Services
@@ -275,7 +332,7 @@ make test
 make lint
 
 # Performance check
-make bench-local
+make bench
 ```
 
 ### Model Updates
@@ -286,8 +343,41 @@ make train
 # Export to ONNX
 make export-onnx
 
-# Compare performance
-python scripts/benchmark_backends.py
+# Switch backend (in .env)
+MODEL_BACKEND=onnx
+
+# Restart services
+make dev
+```
+
+### Testing Workflow
+```bash
+# Run all tests
+make test
+
+# Run linting
+make lint
+
+# Format code
+make fmt
+
+# Load testing
+make bench
+```
+
+### Debugging
+```bash
+# View logs
+make logs
+
+# Access container shell
+make shell
+
+# Check queue status
+make queue-status
+
+# View metrics
+make metrics
 ```
 
 ## 📝 API Schema
